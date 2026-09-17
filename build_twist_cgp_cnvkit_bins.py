@@ -29,7 +29,9 @@ Output:
   twist_cgp_cnvkit_bins_annotated_hg38.bed
 
 Requires: dx (DNAnexus CLI, authenticated), docker (cgp-cnvkit:1.0.0 image
-loaded or pullable), python3 stdlib only otherwise.
+must be docker load'ed from the production image tar -- there is no
+registry to pull it from, see the CNVKIT_IMAGE comment below), python3
+stdlib only otherwise.
 """
 import argparse
 import json
@@ -237,7 +239,7 @@ def load_bed_with_genes(path):
             genes = set(g for g in base.split(",") if g)
             regions[chrom].append((start, end, genes))
     for c in regions:
-        regions[c].sort()
+        regions[c].sort(key=lambda iv: (iv[0], iv[1]))
         running_max_end = float("-inf")
         with_prefix_max = []
         for s, e, genes in regions[c]:
@@ -273,17 +275,10 @@ def overlapping_genes(regions, chrom, start, end):
     idx = bisect.bisect_left(starts, end)
     found = set()
 
-    # Forward: idx onward, while start < end.
-    j = idx
-    while j < len(ivs) and ivs[j][0] < end:
-        s, e, genes, _ = ivs[j]
-        if e > start:
-            found |= genes
-        j += 1
-
-    # Backward: every interval at index < idx already has start < end
-    # (guaranteed above), so just test end > start, stopping once the
-    # prefix-max-end proves nothing earlier can qualify either.
+    # Every interval at index < idx already has start < end (guaranteed by
+    # bisect_left, since starts is sorted): starts[idx] >= end whenever idx <
+    # len(ivs), so nothing from idx onward can ever satisfy start < end. Only
+    # the backward scan can find a match.
     k = idx - 1
     while k >= 0:
         s, e, genes, prefix_max_end = ivs[k]

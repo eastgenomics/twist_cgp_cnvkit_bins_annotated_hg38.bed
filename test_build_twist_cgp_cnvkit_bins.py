@@ -211,6 +211,49 @@ class TestVerifyRefflatChecksum(unittest.TestCase):
             build_mod.EXPECTED_REFFLAT_SHA256 = orig
 
 
+class TestDownloadRefflatCachedPath(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cached = Path(self.tmp.name) / "cached_refflat.txt"
+        self.cached.write_bytes(b"some refflat content\n")
+        self.dest = Path(self.tmp.name) / "refFlat.txt"
+        import hashlib
+
+        self.real_sha256 = hashlib.sha256(self.cached.read_bytes()).hexdigest()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_copies_cached_file_bytes_to_dest(self):
+        orig = build_mod.EXPECTED_REFFLAT_SHA256
+        build_mod.EXPECTED_REFFLAT_SHA256 = self.real_sha256
+        try:
+            build_mod.download_refflat(self.dest, cached_path=self.cached)
+            self.assertEqual(self.dest.read_bytes(), self.cached.read_bytes())
+        finally:
+            build_mod.EXPECTED_REFFLAT_SHA256 = orig
+
+    def test_exits_when_cached_file_fails_checksum(self):
+        orig = build_mod.EXPECTED_REFFLAT_SHA256
+        build_mod.EXPECTED_REFFLAT_SHA256 = "0" * 64
+        try:
+            with self.assertRaises(SystemExit):
+                build_mod.download_refflat(self.dest, cached_path=self.cached)
+        finally:
+            build_mod.EXPECTED_REFFLAT_SHA256 = orig
+
+    def test_skip_flag_bypasses_a_cached_file_checksum_mismatch(self):
+        orig = build_mod.EXPECTED_REFFLAT_SHA256
+        build_mod.EXPECTED_REFFLAT_SHA256 = "0" * 64
+        try:
+            build_mod.download_refflat(
+                self.dest, cached_path=self.cached, skip_checksum_assert=True
+            )  # must not raise
+            self.assertEqual(self.dest.read_bytes(), self.cached.read_bytes())
+        finally:
+            build_mod.EXPECTED_REFFLAT_SHA256 = orig
+
+
 class TestNormalizationTable(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

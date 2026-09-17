@@ -39,7 +39,8 @@ python3 build_twist_cgp_cnvkit_bins.py --out twist_cgp_cnvkit_bins_annotated_hg3
 ```
 
 Requires: `dx` (authenticated DNAnexus CLI), `docker` (`cgp-cnvkit:1.0.0`
-image loaded or pullable), Python 3 stdlib only otherwise.
+image must be `docker load`ed from the production image tar -- there is no
+registry to pull it from), Python 3 stdlib only otherwise.
 
 The build asserts its output against a pinned checksum (`EXPECTED_BINS_MD5`
 in the script) — confirmed reproducible across independent from-scratch
