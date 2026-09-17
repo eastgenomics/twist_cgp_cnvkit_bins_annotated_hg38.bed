@@ -112,6 +112,52 @@ class TestOverlappingGenes(unittest.TestCase):
         genes = build_mod.overlapping_genes(self.regions, "chr1", 260, 290)
         self.assertEqual(genes, set())
 
+    def test_finds_overlap_past_more_than_five_intervening_starts(self):
+        # Regression test: a fixed 5-entry look-back before the bisect
+        # insertion point can silently miss a real overlap when more than
+        # five later-starting-but-still-overlapping intervals sit between
+        # the true match and the query. This mirrors the real failure
+        # found against the actual targets BED (ALK, MSH2, KIT, PTEN).
+        # WIDE starts early and runs long; 8 short, densely-packed
+        # intervals start after it but well within its span.
+        tmp = tempfile.TemporaryDirectory()
+        try:
+            bed = Path(tmp.name) / "dense.bed"
+            rows = [("chr1", 1000, 5000, "WIDE_exon1")]
+            for i in range(8):
+                s = 2000 + i * 10
+                rows.append(("chr1", s, s + 5, f"SHORT{i}_exon1"))
+            write_bed(bed, rows)
+            regions = build_mod.load_bed_with_genes(bed)
+            # Query sits inside WIDE's span but strictly after all 8 SHORT
+            # intervals -- so WIDE is 9 positions before the bisect point,
+            # well past a 5-entry look-back.
+            genes = build_mod.overlapping_genes(regions, "chr1", 4000, 4010)
+            self.assertEqual(genes, {"WIDE"})
+        finally:
+            tmp.cleanup()
+
+    def test_stops_backward_scan_once_prefix_max_end_proves_no_more_overlaps(self):
+        # Not a regression test per se -- just confirms the early-exit path
+        # itself still returns every genuine overlap, not just the nearest
+        # one, once it does apply.
+        tmp = tempfile.TemporaryDirectory()
+        try:
+            bed = Path(tmp.name) / "early_exit.bed"
+            write_bed(
+                bed,
+                [
+                    ("chr1", 100, 900, "FAR_exon1"),  # ends well before query
+                    ("chr1", 200, 300, "MID_exon1"),
+                    ("chr1", 950, 1050, "NEAR_exon1"),  # genuinely overlaps
+                ],
+            )
+            regions = build_mod.load_bed_with_genes(bed)
+            genes = build_mod.overlapping_genes(regions, "chr1", 1000, 1100)
+            self.assertEqual(genes, {"NEAR"})
+        finally:
+            tmp.cleanup()
+
 
 class TestOverlaps(unittest.TestCase):
     def test_genuine_overlap(self):
@@ -125,6 +171,44 @@ class TestOverlaps(unittest.TestCase):
 
     def test_fully_contained_interval_overlaps(self):
         self.assertTrue(build_mod.overlaps(("chr1", 100, 200), "chr1", 120, 130))
+
+
+class TestVerifyRefflatChecksum(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self.tmp.name) / "refFlat.txt"
+        self.path.write_bytes(b"some refflat content\n")
+        import hashlib
+
+        self.real_sha256 = hashlib.sha256(self.path.read_bytes()).hexdigest()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_passes_when_content_matches_pinned_sha256(self):
+        orig = build_mod.EXPECTED_REFFLAT_SHA256
+        build_mod.EXPECTED_REFFLAT_SHA256 = self.real_sha256
+        try:
+            build_mod.verify_refflat_checksum(self.path)  # must not raise
+        finally:
+            build_mod.EXPECTED_REFFLAT_SHA256 = orig
+
+    def test_exits_when_content_does_not_match_pinned_sha256(self):
+        orig = build_mod.EXPECTED_REFFLAT_SHA256
+        build_mod.EXPECTED_REFFLAT_SHA256 = "0" * 64
+        try:
+            with self.assertRaises(SystemExit):
+                build_mod.verify_refflat_checksum(self.path)
+        finally:
+            build_mod.EXPECTED_REFFLAT_SHA256 = orig
+
+    def test_skip_flag_bypasses_a_mismatch_without_raising(self):
+        orig = build_mod.EXPECTED_REFFLAT_SHA256
+        build_mod.EXPECTED_REFFLAT_SHA256 = "0" * 64
+        try:
+            build_mod.verify_refflat_checksum(self.path, skip=True)  # must not raise
+        finally:
+            build_mod.EXPECTED_REFFLAT_SHA256 = orig
 
 
 class TestNormalizationTable(unittest.TestCase):
