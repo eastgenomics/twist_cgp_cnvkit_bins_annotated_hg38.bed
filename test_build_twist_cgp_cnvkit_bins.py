@@ -254,6 +254,64 @@ class TestDownloadRefflatCachedPath(unittest.TestCase):
             build_mod.EXPECTED_REFFLAT_SHA256 = orig
 
 
+class TestDownloadRefflatSourceSelection(unittest.TestCase):
+    """download_refflat() must pick DNAnexus (default) vs. live UCSC vs. cached
+    correctly, without ever touching the network/dx in a unit test."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dest = Path(self.tmp.name) / "refFlat.txt"
+        self.calls = []
+        self.orig_dx_download = build_mod.dx_download
+        self.orig_urlretrieve = build_mod.urllib.request.urlretrieve
+        self.orig_sh = build_mod.sh
+        self.orig_sha256 = build_mod.EXPECTED_REFFLAT_SHA256
+
+        def fake_dx_download(source, out_path):
+            self.calls.append(("dx_download", source))
+            Path(out_path).write_bytes(b"gz-placeholder")
+
+        def fake_urlretrieve(url, out_path):
+            self.calls.append(("urlretrieve", url))
+            Path(out_path).write_bytes(b"gz-placeholder")
+
+        def fake_sh(cmd, **kw):
+            # stands in for `gunzip -kf ...`: just materialise dest with known content
+            self.dest.write_bytes(b"some refflat content\n")
+
+        build_mod.dx_download = fake_dx_download
+        build_mod.urllib.request.urlretrieve = fake_urlretrieve
+        build_mod.sh = fake_sh
+        import hashlib
+
+        build_mod.EXPECTED_REFFLAT_SHA256 = hashlib.sha256(b"some refflat content\n").hexdigest()
+
+    def tearDown(self):
+        build_mod.dx_download = self.orig_dx_download
+        build_mod.urllib.request.urlretrieve = self.orig_urlretrieve
+        build_mod.sh = self.orig_sh
+        build_mod.EXPECTED_REFFLAT_SHA256 = self.orig_sha256
+        self.tmp.cleanup()
+
+    def test_defaults_to_the_pinned_dnanexus_snapshot(self):
+        build_mod.download_refflat(self.dest)
+        self.assertEqual(self.calls, [("dx_download", build_mod.DEFAULT_REFFLAT_PROJECT_FILE)])
+
+    def test_honours_an_explicit_dnanexus_source_override(self):
+        build_mod.download_refflat(self.dest, dnanexus_source="project-X:file-Y")
+        self.assertEqual(self.calls, [("dx_download", "project-X:file-Y")])
+
+    def test_live_ucsc_flag_downloads_from_the_ucsc_url_instead(self):
+        build_mod.download_refflat(self.dest, use_live_ucsc=True)
+        self.assertEqual(self.calls, [("urlretrieve", build_mod.REFFLAT_URL)])
+
+    def test_cached_path_takes_priority_over_both_download_sources(self):
+        cached = Path(self.tmp.name) / "cached_refflat.txt"
+        cached.write_bytes(b"some refflat content\n")
+        build_mod.download_refflat(self.dest, cached_path=cached, use_live_ucsc=True)
+        self.assertEqual(self.calls, [])  # neither dx_download nor urlretrieve called
+
+
 class TestNormalizationTable(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

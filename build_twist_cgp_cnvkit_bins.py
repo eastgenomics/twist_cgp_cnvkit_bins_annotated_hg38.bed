@@ -23,7 +23,10 @@ Inputs (DNAnexus file IDs, immutable/content-addressed):
   --targets-bed   file-J8F1zf045FG6xJVp5X6b0Pkp  (Twist_Oncology_CGP_hg38.bed,
                     the pre-existing exon/ClinVar/MSI-annotated file, used as
                     a fallback annotation source and cross-validation target)
-  --refflat       downloaded fresh from UCSC (hg38) unless --refflat-path given
+  --refflat       pinned snapshot deposited on DNAnexus (see
+                    DEFAULT_REFFLAT_PROJECT_FILE), content-verified against
+                    EXPECTED_REFFLAT_SHA256, unless --refflat-path or
+                    --refflat-live-ucsc is given
 
 Output:
   twist_cgp_cnvkit_bins_annotated_hg38.bed
@@ -44,6 +47,13 @@ from pathlib import Path
 
 DEFAULT_BAITS_PROJECT_FILE = "project-Fkb6Gkj433GVVvj73J7x8KbV:file-J8kGqJQ46fy5b59VqjjkJqJ3"
 DEFAULT_TARGETS_PROJECT_FILE = "project-J8F1vK845FGG0pVG2vfQ4J34:file-J8F1zf045FG6xJVp5X6b0Pkp"
+# UCSC's live hgdownload URL is not versioned or content-addressed -- it can
+# be updated (or removed) at any time with no way to retrieve the exact
+# historical file used here. The verified snapshot (see EXPECTED_REFFLAT_SHA256
+# below) has been deposited on DNAnexus as an immutable file and is the
+# default source; --refflat-live-ucsc is the explicit escape hatch back to
+# the live URL (e.g. to deliberately pick up a real UCSC update).
+DEFAULT_REFFLAT_PROJECT_FILE = "project-Fkb6Gkj433GVVvj73J7x8KbV:file-JBfX5bQ433Gq7QG1kFPPgpFx"
 REFFLAT_URL = "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/database/refFlat.txt.gz"
 
 # Content sha256 of the decompressed refFlat.txt, pinned so a future UCSC
@@ -151,14 +161,24 @@ def verify_refflat_checksum(path, skip=False):
     print(f"refFlat checksum verified: {actual}", file=sys.stderr)
 
 
-def download_refflat(dest, cached_path=None, skip_checksum_assert=False):
+def download_refflat(dest, cached_path=None, skip_checksum_assert=False, dnanexus_source=None, use_live_ucsc=False):
     dest = Path(dest)
     if cached_path:
         dest.write_bytes(Path(cached_path).read_bytes())
-    else:
-        print(f"Downloading refFlat.txt.gz from UCSC: {REFFLAT_URL}", file=sys.stderr)
+    elif use_live_ucsc:
+        print(
+            f"Downloading refFlat.txt.gz from LIVE UCSC (not the pinned DNAnexus "
+            f"snapshot -- only the checksum below protects you here): {REFFLAT_URL}",
+            file=sys.stderr,
+        )
         gz_path = str(dest) + ".gz"
         urllib.request.urlretrieve(REFFLAT_URL, gz_path)
+        sh(f"gunzip -kf {gz_path}")
+    else:
+        source = dnanexus_source or DEFAULT_REFFLAT_PROJECT_FILE
+        print(f"Downloading refFlat.txt.gz from the pinned DNAnexus snapshot: {source}", file=sys.stderr)
+        gz_path = str(dest) + ".gz"
+        dx_download(source, gz_path)
         sh(f"gunzip -kf {gz_path}")
     verify_refflat_checksum(dest, skip=skip_checksum_assert)
 
@@ -367,6 +387,17 @@ def main():
     ap.add_argument("--baits-bed-source", default=DEFAULT_BAITS_PROJECT_FILE)
     ap.add_argument("--targets-bed-source", default=DEFAULT_TARGETS_PROJECT_FILE)
     ap.add_argument("--refflat-path", help="Use a local refFlat.txt instead of downloading")
+    ap.add_argument(
+        "--refflat-source",
+        default=DEFAULT_REFFLAT_PROJECT_FILE,
+        help="DNAnexus project:file for the pinned refFlat.txt.gz snapshot",
+    )
+    ap.add_argument(
+        "--refflat-live-ucsc",
+        action="store_true",
+        help="Download refFlat.txt fresh from live UCSC instead of the pinned DNAnexus "
+        "snapshot (still checksum-verified, but UCSC's URL is otherwise unversioned)",
+    )
     ap.add_argument("--workdir", default="/tmp/build_twist_cgp_cnvkit_bins")
     ap.add_argument("--out", default="twist_cgp_cnvkit_bins_annotated_hg38.bed")
     ap.add_argument("--skip-download", action="store_true", help="Reuse existing files in --workdir")
@@ -405,6 +436,8 @@ def main():
             refflat,
             cached_path=args.refflat_path,
             skip_checksum_assert=args.skip_refflat_checksum_assert,
+            dnanexus_source=args.refflat_source,
+            use_live_ucsc=args.refflat_live_ucsc,
         )
     else:
         for p in (baits_bed, targets_bed, refflat):

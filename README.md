@@ -10,7 +10,13 @@ Twist's capture-probe ("baits") BED is unannotated coordinates only. This
 script:
 
 1. Downloads the baits BED and the panel's existing exon-annotated
-   ("targets") BED from DNAnexus, and `refFlat.txt` (hg38) from UCSC.
+   ("targets") BED from DNAnexus, plus a pinned `refFlat.txt` (hg38)
+   snapshot -- also deposited on DNAnexus by default, since UCSC's live
+   hgdownload file is unversioned and could change or disappear without
+   notice, making the exact historical snapshot used here unrecoverable
+   otherwise. The download is checksum-verified either way
+   (`EXPECTED_REFFLAT_SHA256`); `--refflat-live-ucsc` re-downloads fresh
+   from UCSC instead, if you explicitly want that.
 2. Runs `cnvkit.py target --annotate --split` (via the `cgp-cnvkit:1.0.0`
    Docker image already used in production) to add gene names and split
    large bait tiles into properly-sized CNVkit bins.
