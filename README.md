@@ -10,13 +10,11 @@ Twist's capture-probe ("baits") BED is unannotated coordinates only. This
 script:
 
 1. Downloads the baits BED and the panel's existing exon-annotated
-   ("targets") BED from DNAnexus, plus a pinned `refFlat.txt` (hg38)
-   snapshot -- also deposited on DNAnexus by default, since UCSC's live
-   hgdownload file is unversioned and could change or disappear without
-   notice, making the exact historical snapshot used here unrecoverable
-   otherwise. The download is checksum-verified either way
-   (`EXPECTED_REFFLAT_SHA256`); `--refflat-live-ucsc` re-downloads fresh
-   from UCSC instead, if you explicitly want that.
+   ("targets") BED from DNAnexus, plus `refFlat.txt` (hg38) via one of four
+   source modes (see the table below) -- UCSC's live hgdownload file is
+   unversioned and could change or disappear without notice, so the exact
+   historical snapshot used here is deposited on DNAnexus and used by
+   default.
 2. Runs `cnvkit.py target --annotate --split` (via the `cgp-cnvkit:1.0.0`
    Docker image already used in production) to add gene names and split
    large bait tiles into properly-sized CNVkit bins.
@@ -37,6 +35,23 @@ script:
 Full narrative (why each step exists, what was tried, what the 131-entry
 normalization-table audit found) is in the Confluence controlled document:
 [twist_cgp_cnvkit_bins_annotated_hg38.bed](https://cuhbioinformatics.atlassian.net/wiki/spaces/DV/pages/4805623944).
+
+### refFlat source modes
+
+Checked in this order — the first that applies wins; every mode still goes
+through the same `EXPECTED_REFFLAT_SHA256` content check unless
+`--skip-refflat-checksum-assert` is also passed:
+
+| Precedence | Option | Behaviour |
+|---|---|---|
+| 1 (highest) | `--refflat-path PATH` | Use a local file directly, no download |
+| 2 | `--refflat-live-ucsc` | Download fresh from the live UCSC URL (`REFFLAT_URL`) |
+| 3 | `--refflat-source PROJECT:FILE` | Download this specific DNAnexus file instead of the default |
+| 4 (default) | *(none of the above given)* | Download the pinned DNAnexus snapshot, `DEFAULT_REFFLAT_PROJECT_FILE` |
+
+`--refflat-source` and `--refflat-live-ucsc` are mutually exclusive in
+practice: `--refflat-live-ucsc` takes priority whenever both are given,
+since it's checked first.
 
 ## Usage
 
