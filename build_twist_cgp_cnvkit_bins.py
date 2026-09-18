@@ -443,6 +443,10 @@ def main():
         for p in (baits_bed, targets_bed, refflat):
             if not p.exists():
                 sys.exit(f"--skip-download given but {p} is missing")
+        # A reused workdir's refFlat.txt could be stale or hand-edited since it
+        # was last downloaded -- --skip-download must not let that reach CNVkit
+        # unverified, or the whole point of EXPECTED_REFFLAT_SHA256 is defeated.
+        verify_refflat_checksum(refflat, skip=args.skip_refflat_checksum_assert)
 
     run_cnvkit_target(baits_bed, refflat, baits_annotated, workdir)
 
