@@ -53,7 +53,7 @@ through the same `EXPECTED_REFFLAT_SHA256` content check unless
 practice: `--refflat-live-ucsc` takes priority whenever both are given,
 since it's checked first.
 
-## Usage
+## Usage — recreating the file
 
 ```bash
 python3 build_twist_cgp_cnvkit_bins.py --out twist_cgp_cnvkit_bins_annotated_hg38.bed
@@ -63,9 +63,18 @@ Requires: `dx` (authenticated DNAnexus CLI), `docker` (`cgp-cnvkit:1.0.0`
 image must be `docker load`ed from the production image tar -- there is no
 registry to pull it from), Python 3 stdlib only otherwise.
 
-The build asserts its output against a pinned checksum (`EXPECTED_BINS_MD5`
-in the script) — confirmed reproducible across independent from-scratch
-runs (fresh downloads, no cached state).
+Run in a fresh/empty `--workdir` (the default,
+`/tmp/build_twist_cgp_cnvkit_bins`, is fine as long as nothing from a
+previous run is left in it), without `--skip-download`, `--refflat-path`,
+or any other cached-input override. This is the exact same command whether
+you're recreating the file for the first time or independently verifying
+reproducibility -- there is no separate test mode or test script. A real,
+fresh run downloads the baits BED, targets BED, and refFlat from scratch,
+runs them through `cnvkit.py target --annotate --split`, and the script
+asserts the result against the pinned checksum below (`EXPECTED_BINS_MD5`),
+exiting non-zero on any mismatch -- so a clean exit *is* the reproducibility
+proof. Confirmed this way across multiple independent from-scratch runs
+during development.
 
 ## Tests
 
