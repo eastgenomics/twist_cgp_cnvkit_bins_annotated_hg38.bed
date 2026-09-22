@@ -473,6 +473,18 @@ def main():
         if actual != EXPECTED_BINS_MD5:
             sys.exit(f"Checksum mismatch: expected {EXPECTED_BINS_MD5}, got {actual}")
         print(f"Checksum verified: {actual}", file=sys.stderr)
+    elif EXPECTED_BINS_MD5:
+        # a checksum IS pinned, it was just intentionally not checked --
+        # distinct from "nothing pinned yet" below, which is a different
+        # situation (first run) and shouldn't be conflated with this one
+        import hashlib
+
+        actual = hashlib.md5(Path(args.out).read_bytes()).hexdigest()
+        print(
+            f"Skipped output checksum assertion (--skip-output-checksum-assert): "
+            f"pinned EXPECTED_BINS_MD5={EXPECTED_BINS_MD5}, actual={actual}, not compared.",
+            file=sys.stderr,
+        )
     else:
         print(
             "No pinned checksum set yet (EXPECTED_BINS_MD5) -- "
