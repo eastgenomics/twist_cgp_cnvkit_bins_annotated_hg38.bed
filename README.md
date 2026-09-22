@@ -30,7 +30,12 @@ script:
    `DECISIONS` constant with its evidence — see the module docstring and
    comments in `build_twist_cgp_cnvkit_bins.py`.
 5. Leaves anything genuinely unresolved as `UNRESOLVED` rather than
-   guessing.
+   guessing. A bin is only left as literal `UNRESOLVED` (in the name/gene
+   column) when the raw CNVkit `--annotate` output had no gene name for it
+   (`-`), it isn't one of the explicit `PROMOTER_CONFIRMED` overrides, and
+   the cross-validation targets BED has no gene overlapping that bin
+   either -- i.e. no annotation source available could resolve it, so it's
+   left as an explicit, visible gap instead of a silent guess.
 
 Full narrative (why each step exists, what was tried, what the 131-entry
 normalization-table audit found) is in the Confluence controlled document:
@@ -90,6 +95,14 @@ fixtures — no Docker, DNAnexus, or network access needed. Integration-level
 concerns (`dx_download`, `run_cnvkit_target`, `download_refflat`,
 `reverify_ensembl`) are exercised by the reproducibility runs instead, not
 mocked here.
+
+### CI
+
+`.github/workflows/ci.yml` runs on every push and pull request: a Python
+syntax check (`py_compile`) on both scripts, then the full unit test suite
+above via `pytest`. It does not run a real build (no `dx`/Docker/network
+access in CI), so it cannot verify the pinned checksum end-to-end -- that's
+left to the manual from-scratch runs described above.
 
 ## Files
 

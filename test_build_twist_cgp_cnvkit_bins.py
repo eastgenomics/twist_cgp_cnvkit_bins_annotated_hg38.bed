@@ -523,6 +523,45 @@ class TestDeriveAnnotationNormalizationTable(unittest.TestCase):
         with self.assertRaises(AssertionError):
             derive_mod.derive(self.fresh, self.original)
 
+    def test_raises_on_line_count_mismatch(self):
+        # if one file has extra trailing rows the two files aren't
+        # comparable either -- must fail loudly rather than have zip()
+        # silently truncate to the shorter file and drop the extra rows
+        write_bed(
+            self.fresh,
+            [
+                ("chr1", 100, 200, "GENEA,GENEB"),
+                ("chr2", 300, 400, "GENEC"),
+            ],
+        )
+        write_bed(self.original, [("chr1", 100, 200, "GENEA")])
+        with self.assertRaises(SystemExit):
+            derive_mod.derive(self.fresh, self.original)
+
+    def test_reports_occurrence_count_via_stats(self):
+        # stats["n_occurrences"] counts every ambiguous *region*, which can
+        # be larger than the returned table (distinct ambiguous *names*)
+        write_bed(
+            self.fresh,
+            [
+                ("chr1", 100, 200, "MTOR,MTOR-AS1"),
+                ("chr2", 300, 400, "MTOR,MTOR-AS1"),
+                ("chr3", 500, 600, "EGFR,EGFR-AS1"),
+            ],
+        )
+        write_bed(
+            self.original,
+            [
+                ("chr1", 100, 200, "MTOR"),
+                ("chr2", 300, 400, "MTOR"),
+                ("chr3", 500, 600, "EGFR"),
+            ],
+        )
+        stats = {}
+        table = derive_mod.derive(self.fresh, self.original, stats=stats)
+        self.assertEqual(len(table), 2)
+        self.assertEqual(stats["n_occurrences"], 3)
+
 
 if __name__ == "__main__":
     unittest.main()

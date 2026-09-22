@@ -408,7 +408,12 @@ def main():
         "derive_annotation_normalization_table.py",
     )
     ap.add_argument("--reverify-ensembl", action="store_true")
-    ap.add_argument("--skip-checksum-assert", action="store_true")
+    ap.add_argument(
+        "--skip-output-checksum-assert",
+        action="store_true",
+        help="Proceed even if the built output BED's md5 doesn't match EXPECTED_BINS_MD5 "
+        "(e.g. while reviewing an intentional output change, before repinning it)",
+    )
     ap.add_argument(
         "--skip-refflat-checksum-assert",
         action="store_true",
@@ -461,7 +466,7 @@ def main():
 
     print("Build stats:", dict(stats), file=sys.stderr)
 
-    if EXPECTED_BINS_MD5 and not args.skip_checksum_assert:
+    if EXPECTED_BINS_MD5 and not args.skip_output_checksum_assert:
         import hashlib
 
         actual = hashlib.md5(Path(args.out).read_bytes()).hexdigest()

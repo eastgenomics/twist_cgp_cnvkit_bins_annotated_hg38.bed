@@ -38,12 +38,34 @@ already-reviewed baseline.
 import argparse
 import csv
 from collections import defaultdict
+from itertools import zip_longest
+
+_MISSING = object()  # sentinel: a row present on one side but not the other
 
 
-def derive(fresh_path, original_path):
+def derive(fresh_path, original_path, stats=None):
+    """Derive the ambiguous-name -> resolved-name table.
+
+    `stats`, if given a dict, is populated in-place with `n_occurrences`:
+    the total number of individual regions that hit an ambiguous name
+    (as opposed to the number of *distinct* ambiguous name strings, which
+    is just `len()` of the returned table) -- e.g. 662 regions collapsing
+    down to 131 unique ambiguous names.
+    """
     mapping = defaultdict(set)  # ambiguous_name -> {resolved single names}
+    n_occurrences = 0
     with open(fresh_path) as ff, open(original_path) as fo:
-        for fresh_line, orig_line in zip(ff, fo):
+        for i, (fresh_line, orig_line) in enumerate(zip_longest(ff, fo, fillvalue=_MISSING), start=1):
+            # zip_longest (not zip) so a line-count mismatch between the two
+            # files raises loudly here instead of zip silently truncating to
+            # the shorter file and dropping trailing rows unnoticed.
+            if fresh_line is _MISSING or orig_line is _MISSING:
+                shorter, longer = ("fresh", "original") if fresh_line is _MISSING else ("original", "fresh")
+                raise SystemExit(
+                    f"Line count mismatch -- fresh and original files must have the "
+                    f"same number of rows (same baits BED, same --split behaviour): "
+                    f"{shorter} file has exactly {i - 1} lines, {longer} file has at least {i} lines"
+                )
             f_chrom, f_s, f_e, f_name = fresh_line.rstrip("\n").split("\t")
             o_chrom, o_s, o_e, o_name = orig_line.rstrip("\n").split("\t")
             assert (f_chrom, f_s, f_e) == (o_chrom, o_s, o_e), (
@@ -53,11 +75,14 @@ def derive(fresh_path, original_path):
             )
             if f_name != o_name and "," in f_name:
                 mapping[f_name].add(o_name)
+                n_occurrences += 1
     # every ambiguous name must resolve to exactly one original value --
     # if it doesn't, the mapping is ambiguous itself and needs a human look
     conflicts = {k: v for k, v in mapping.items() if len(v) > 1}
     if conflicts:
         raise SystemExit(f"Non-unique resolutions found, needs manual review: {conflicts}")
+    if stats is not None:
+        stats["n_occurrences"] = n_occurrences
     return {k: next(iter(v)) for k, v in mapping.items()}
 
 
@@ -68,7 +93,8 @@ def main():
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
-    table = derive(args.fresh, args.original)
+    stats = {}
+    table = derive(args.fresh, args.original, stats=stats)
 
     with open(args.out, "w", newline="") as f:
         w = csv.writer(f, delimiter="\t")
@@ -76,7 +102,10 @@ def main():
         for ambiguous, resolved in sorted(table.items()):
             w.writerow([ambiguous, resolved])
 
-    print(f"Wrote {len(table)} normalization entries to {args.out}")
+    print(
+        f"Found {stats['n_occurrences']} ambiguous regions, "
+        f"resolving to {len(table)} unique normalization entries -- wrote to {args.out}"
+    )
 
 
 if __name__ == "__main__":
